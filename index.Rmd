@@ -1,0 +1,462 @@
+--- 
+title: "Time Series SARIMA Model"
+author: "Zivojin S. Pantic"
+date: "`r Sys.Date()`"
+site: bookdown::bookdown_site
+# output: bookdown::gitbook
+documentclass: book
+bibliography: [book.bib, packages.bib]
+biblio-style: apalike
+link-citations: yes
+github-repo: openscapes/series
+description: "Time Series SARIMA Model."
+---
+
+```{r klippy, echo=FALSE, include=TRUE}
+klippy::klippy(position = c('top', 'right'))
+```
+
+```{r libraries setup, echo=TRUE, message=TRUE, warning=FALSE}
+# Sarima
+suppressMessages(library(astsa))
+suppressMessages(library(sarima))
+# Arima forecast
+suppressMessages(library(forecast))
+# Skewness Kurtosis
+suppressMessages(library(moments))
+# Seasonality test
+suppressMessages(library(seastests))
+# Plotly
+suppressMessages(library(plotly))
+# Anomalies
+suppressMessages(library(anomalize))
+# Time series Manipulation
+suppressMessages(library(xts))
+# Plots
+suppressMessages(library(ggplot2))
+# A set of packages 
+suppressMessages(library(tidyverse))
+# Converting everything to everything
+suppressMessages(library(tsbox))
+#  'ggpubr' provides easy-to-use functions for creating and customizing 'ggplot2'- based publication ready plots
+suppressMessages(library(ggpubr))
+# This package has functions that plot decomposed time series data with ggplot2 
+suppressMessages(library(ggplottimeseries))
+# Publication ready theme
+theme_set(theme_pubr())
+# tables
+suppressMessages(library(knitr))
+suppressMessages(library(kableExtra))
+# Missing data mapping
+suppressMessages(library(naniar))
+suppressMessages(library(pander))
+```
+# Data
+
+```{r data}
+#CSV Data -Data import from CSV file
+data_csv <- read.csv('austria-qu.csv')
+
+# Missing data mapping
+vis_miss(data_csv)
+
+#Time Series Data
+data_ts<-ts(data_csv[,2],start = c(1975,4),frequency = 4)
+
+# Conversion to tibble
+data_tibble<-ts_tibbletime(data_ts)
+#Extend Tibble Data
+data_tibble$month <- factor(format(data_tibble$time, "%b"))
+data_tibble$year <- factor(format(data_tibble$time, "%Y"))
+qOrder=c('Q2','Q1','Q3','Q4')
+data_tibble$quarter<-factor(data_tibble$month,labels=qOrder)
+
+pander(data_ts)
+pander(head(data_tibble))
+
+```
+
+# Exploratory Data Analysis
+
+## Observations and Trend
+
+```{r EDA}
+
+trend <- ma(data_ts, order = 4, centre = T)
+trend_ts<- as.ts(trend)
+trend_tibble<-ts_tibbletime(trend_ts)
+
+p1<-ggplot(data=data_tibble,mapping=aes(x=time,y=value))+
+  geom_line(color='darkblue',size=1)+
+  theme_gray()+
+  labs(title = 'Time Series', x='Time', y='Observed Values')
+fig1<-ggplotly(p1)
+fig1
+p2<-ggplot(data=trend_tibble,mapping=aes(x=time,y=value))+
+  geom_line(color='darkblue', size=1)+
+  theme_gray()+
+  labs(title = 'Trend', x='Time', y='Trend')
+fig2<-ggplotly(p2)
+fig2
+```
+
+## Anomalize
+
+```{r anomalize}
+x<-as.yearqtr(data_csv$Year)
+x<-as.Date(x)
+y<-data_csv$Production
+tbl<-tibble(x,y)
+p1 <- tbl %>%
+    time_decompose(y) %>%
+    anomalize(remainder, alpha = 0.05, max_anoms = 0.2) %>%
+    plot_anomaly_decomposition() +
+    ggtitle("Anomaly Decomposition")
+p2 <- tbl %>%
+    time_decompose(y) %>%
+    anomalize(remainder, alpha = 0.05, max_anoms = 0.2) %>%
+    time_recompose() %>%
+    plot_anomalies(time_recomposed = TRUE) +
+    geom_line(color='darkblue')+
+    ggtitle("Anomalies")
+p3<-tbl %>%
+  time_decompose(y) %>%
+  anomalize(remainder,alpha = 0.05, max_anoms = 0.2) %>%
+  time_recompose() %>%
+  filter(anomaly == 'Yes')
+p1
+p2
+p4<-tibble(x=p3$x,
+           observerd=p3$observed,
+           seson=p3$season,
+           trend=p3$trend,
+           remainder=p3$remainder,
+           anomaly=p3$anomaly)
+p4%>%pander()
+```
+
+## Seasonality
+
+The WO-test gives out a TRUE if the series is seasonal and FALSE otherwise.
+```{r seasonality}
+summary(wo(data_ts))
+
+# This function converts time series-class data into a data frame of decomposed time series.
+df <- dts2(data_ts, type ="additive")
+
+# plots decomposed time series into one figure
+p<-ggdecompose(df)+
+  theme_gray()+
+  xlab("Time")+
+  ylab("Index")
+p
+```
+
+```{r season-plot}
+p<-ggseasonplot(data_ts) +
+  theme_gray()+
+  ylab("Index") +
+  ggtitle("Seasonal Plot")
+p
+
+p<-ggsubseriesplot(data_ts) +
+  theme_gray()+
+  ylab("Index") +
+  ggtitle("Seasonal subseries plot")
+p
+```
+
+## Box Plot
+
+```{r boxplot}
+p<-ggplot(data_tibble,aes(x=factor(quarter,levels = c('Q1','Q2','Q3','Q4'),ordered=TRUE),y=value))+
+  geom_boxplot()+
+  theme_gray()+
+  labs(title = 'BoxPlot', x='Season', y='Index')
+fig<-ggplotly(p)
+fig
+```
+
+```{r boxplot2, fig.show='hide'}
+# To obtain stats values and  plot non-ggplot box-plot
+z<-boxplot(data_ts~cycle(data_ts),xlab='Quarter',col='beige', 
+           ylab='Industrial Production Index', ylim=c(50,140), axes=FALSE)
+headsv<-c('Q1','Q2','Q3','Q4')
+headsh<-c('Minimum','25th Percentile','Median','75th Percentile','Maximum')
+zdf<-data.frame(z$stats)
+rownames(zdf)<-headsh
+colnames(zdf)<-headsv
+zdf%>%
+  kable%>%
+  kable_styling(bootstrap_options = c("responsive"), full_width = F, position = "left")%>%
+  column_spec(1:1, bold = T) 
+```
+
+# Data Transformation
+
+## Differencing
+
+```{r differencing}
+diffdata<-diff(diff(data_ts,4))
+tibble_diff<-ts_tibbletime(diffdata)
+p<-ggplot(data=tibble_diff,mapping=aes(x=time,y=value))+ 
+  geom_line(color='darkblue')+
+  theme_gray()+
+  labs(title = 'Differenced Series', x='Time', y='Diffrenced Series')
+fig<-ggplotly(p)
+fig
+
+```
+
+## Lambda Parameter
+```{r lambda}
+lmbd<-BoxCox.lambda(data_ts, method=c("loglik"), lower=-1,upper=1)
+pander(cat('lambda=',lmbd))
+```
+
+## Box-Cox Transformation
+
+```{r boxcox}
+trdata<-forecast::BoxCox(data_ts,lmbd)
+difftrdata<-diff(diff(trdata,4))
+tibble_difftr<-ts_tibbletime(difftrdata)
+p<-ggplot(data=tibble_difftr,mapping=aes(x=time,y=value))+ 
+  geom_line(color='darkblue')+
+  theme_gray()+
+  labs(title = 'Differenced and Transformed Series', x='Time', y='Differenced and Transformed Series')
+fig<-ggplotly(p)
+fig
+```
+
+## ACF and PACF
+
+```{r acf-pacf}
+p <- ggAcf(difftrdata)+
+  theme_gray()+
+  labs(title = 'ACF')
+fig<-ggplotly(p)
+fig
+
+p <- ggPacf(difftrdata)+
+  theme_gray()+
+  labs(title = 'PACF')
+fig<-ggplotly(p)
+fig
+```
+
+# Fitting
+
+Based on Summary of rules for identifying ARIMA models https://people.duke.edu/~rnau/arimrule.htm
+
+```{r fitting}
+
+fit1<-Arima(data_ts,order=c(0,1,0), seasonal=c(0,1,1),lambda=lmbd)
+fit2<-Arima(data_ts,order=c(1,1,0), seasonal=c(0,1,1),lambda=lmbd)
+fit3<-Arima(data_ts,order=c(0,1,1), seasonal=c(0,1,1),lambda=lmbd)
+fit4<-Arima(data_ts,order=c(2,1,0), seasonal=c(0,1,1),lambda=lmbd)
+fit5<-Arima(data_ts,order=c(1,1,1), seasonal=c(0,1,1),lambda=lmbd)
+```
+
+## AIC Criteria - Model Selection
+```{r AIC}
+aics<-c(fit1$aic,fit2$aic,fit3$aic,fit4$aic,fit5$aic)
+aics
+names<-c('fit1','fit2','fit3','fit4','fit5')
+aicset<-data.frame(names,aics)
+oset<-aicset[order(aics),]
+kable(oset)%>%
+  kable_styling(bootstrap_options = c("responsive"), full_width = F, position='left') %>%
+  row_spec(1:1, bold = T, color = "white", background = "darkblue")
+on<-which(aics == min(aics))
+cat('Minimum AIC =',aics[on],' fit',on)
+```
+
+## Auto ARIMA
+Auto Arima suggested model
+```{r auto-Arima}
+auto.arima(data_ts, d = 1, D = 1, max.p = 2, max.q = 2, max.P = 2,
+  max.Q = 2, max.order = 5, seasonal = TRUE, lambda=lmbd)
+```
+# Confirmatiory Data Analysis
+
+## ACF and PACF Residuals 
+```{r residuals1}
+resd<-fit4$residuals
+p <- ggAcf(resd)+
+  theme_gray()+
+  labs(title = 'Residuals ACF')
+fig<-ggplotly(p)
+fig
+
+p <- ggPacf(resd)+
+  theme_gray()+
+  labs(title = 'Residuals PACF')
+fig<-ggplotly(p)
+fig
+```
+
+## Residuals - Histogram
+
+```{r residuals2}
+rdf<-data.frame(resd)
+
+p <- ggplot(rdf, aes(x=resd)) +
+  geom_histogram(aes(y = ..density..), fill = "lightgrey", color="darkblue", size=.2,binwidth=.001) +
+  geom_density(color = "red") +
+  geom_vline(aes(xintercept=mean(resd, na.rm=T)),   
+               color="red", linetype="dashed", size=.5)+
+  theme_gray()+
+  labs(x="")+
+  labs(y="Density")+
+  ggtitle("Density with Histogram Overlay")
+fig <- ggplotly(p)
+fig
+
+```
+
+## Q-Q plot, Shapiro test, skewness and kurtosis
+
+```{r residuals3, message=FALSE, warning=FALSE}
+p<-ggplot(rdf, aes(sample=resd))+
+  stat_qq(color='red', shape=1)+
+  stat_qq_line(color='darkblue')+
+  theme_gray()+
+  ggtitle("QQ Plot")
+ggplotly(p)
+```
+
+```{r residuals4}
+shapiro.test(resd)
+
+sk<-skewness(resd)
+kt<-kurtosis(resd)
+# sk
+# kt
+skdf<-data.frame(Parameter=c('Skewnes','Kurtosis'),
+                 Value=c(sk,kt),
+                 Ideal=c(0,3),
+                 Diff=c(0-sk,3-kt))
+kable(skdf)%>%
+  kable_styling(bootstrap_options = c("responsive"), full_width = F, position = "left")
+```
+
+## Original and Fitted Series
+
+```{r original-fitted}
+tibble_original<-ts_tibbletime(fit4$x)
+tibble_fitted<-ts_tibbletime(fit4$fitted)
+
+tibble_2<-tibble_original
+tibble_2$fitted<-tibble_fitted$value
+tibble_2$original<-tibble_original$value
+tibble_2<-gather(tibble_2,series,val,original:fitted)
+
+print(tibble_2)
+
+p<-ggplot(tibble_2,aes(x=time,y=val,color=series))+
+  geom_point()+
+  geom_line()+
+  theme(legend.position = "top")+
+  theme_gray()+
+  scale_color_manual(values=c("darkblue", "red"))+
+  ggtitle("Original and Fitted Series")
+fig <- ggplotly(p)
+fig
+```
+
+# SARIMA Model Summary
+```{r sarima-summary}
+astsa::sarima(trdata, 2, 1, 0, P = 0, D = 1, Q = 1, S = 4, 
+       details = TRUE, Model=TRUE)
+```
+# Forecast
+
+```{r forecast}
+fc<-forecast(fit4,12)
+fcdf<-as.data.frame(fc)
+kable(fcdf)%>%
+  kable_styling(bootstrap_options = c("responsive"), full_width = F, position='left') 
+
+t1<-seq(as.Date("1975/10/1"), as.Date("1991/07/1"), by = "quarter")
+t2<-seq(as.Date("1991/10/1"), as.Date("1994/07/1"), by = "quarter")
+
+df1<-data.frame(time = t1, value = data_csv$Production, series = "observations")
+df2<-data.frame(time = t2, value = fcdf$`Point Forecast`, series = "forecast")
+df3<-data.frame(time = t2, value = fcdf$`Lo 80`, series = "lo80")
+df4<-data.frame(time = t2, value = fcdf$`Hi 80`, series = "hi80")
+df5<-data.frame(time = t2, value = fcdf$`Lo 95`, series = "lo95")
+df6<-data.frame(time = t2, value = fcdf$`Hi 95`, series = "hi95")
+
+p<-ggplot() +
+  geom_line(data=df1, mapping=aes(x = time, y = value,color=series), size=.4) +
+  geom_line(data=df2, mapping=aes(x = time, y = value,color=series), size=.4)+
+  geom_point(data=df2, mapping=aes(x = time, y = value),color='red', size=.8)+
+  geom_ribbon(aes(ymin=df5$value, ymax=df6$value, x=df2$time),fill = "grey50", alpha = 0.2)+
+  geom_ribbon(aes(ymin=df3$value, ymax=df4$value, x=df2$time),fill = "grey70", alpha = 0.2)+
+  scale_color_manual(values=c("red", "darkblue"))+
+  theme_gray()+
+  labs(x="Time")+
+  labs(y="Observationsand Forecast")+
+  ggtitle("Forecast")
+fig<-ggplotly(p)
+fig
+```
+
+# Time Series Cross-Validation 
+
+Using tsCV function we measure the predictive performance of all four models
+
+```{r cross-validation}
+far1<-function(x, h){forecast(Arima(data_ts,order=c(0,1,0), seasonal=c(0,1,1),lambda=lmbd), h)}
+far2<-function(x, h){forecast(Arima(data_ts,order=c(1,1,0), seasonal=c(0,1,1),lambda=lmbd), h)}
+far3<-function(x, h){forecast(Arima(data_ts,order=c(0,1,1), seasonal=c(0,1,1),lambda=lmbd), h)}
+far4<-function(x, h){forecast(Arima(data_ts,order=c(2,1,0), seasonal=c(0,1,1),lambda=lmbd), h)}
+far5<-function(x, h){forecast(Arima(data_ts,order=c(1,1,1), seasonal=c(0,1,1),lambda=lmbd), h)}
+
+e1<-tsCV (data_ts, far1, h = 12)
+avg_e1<-mean(e1^2,na.rm=TRUE)
+e2<-tsCV (data_ts, far2, h = 12)
+avg_e2<-mean(e2^2,na.rm=TRUE)
+e3<-tsCV (data_ts, far3, h = 12)
+avg_e3<-mean(e3^2,na.rm=TRUE)
+e4<-tsCV (data_ts, far4, h = 12)
+avg_e4<-mean(e4^2,na.rm=TRUE)
+e5<-tsCV (data_ts, far5, h = 12)
+avg_e5<-mean(e5^2,na.rm=TRUE)
+  
+errors<-c(avg_e1,avg_e2,avg_e3,avg_e4,avg_e5) 
+names<-c('MSE 1','MSE 2','MSE 3','MSE 4','MSE 5')
+errorset<-data.frame(names,errors)
+oerrorset<-errorset[order(errors),]
+
+kable(oerrorset)%>%
+  kable_styling(bootstrap_options = c("responsive"), full_width = F, position='left') %>%
+  row_spec(1:1, bold = T, color = "white", background = "darkblue")
+
+
+min.mse<-which(errors==min(errors))
+cat('Minimum MSE =',errors[min.mse],' fit ',min.mse)
+```
+
+# Min MSE Model Summary
+```{r min-mse-summary}
+astsa::sarima(trdata, 1, 1, 0, P = 0, D = 1, Q = 1, S = 4, 
+       details = TRUE, Model=TRUE)
+```
+
+# Simulation
+
+```{r simulation}
+simm<-sim_sarima(n=64, model=list(sma=fit4$coef[1],ar= fit4$coef[2],
+                ma=fit4$coef[3],iorder=1, siorder=1, nseasons=4), rand.gen = rnorm)
+simm_df<-data.frame(time=t1,value=simm)
+p<-ggplot(simm_df,aes(x=time,y=value))+
+  geom_point(color='darkblue')+
+  geom_line(color='darkblue')+
+  theme_gray()+
+  xlab('Time') +
+  ylab('Value')+
+  ggtitle("Simulation")
+fig<-ggplotly(p)
+fig
+```
