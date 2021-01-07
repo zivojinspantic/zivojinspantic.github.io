@@ -1,7 +1,8 @@
 --- 
 title: "Time Series SARIMA Model"
 author: "Zivojin S. Pantic"
-date: "`r Sys.Date()`"
+#date: "`r Sys.Date()`"
+date: "December 2017"
 site: bookdown::bookdown_site
 # output: bookdown::gitbook
 documentclass: book
