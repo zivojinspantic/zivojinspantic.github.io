@@ -1,8 +1,3 @@
 # Sarima model
 
-<<<<<<< HEAD
-Bookdown
-=======
-
-Bokdown
->>>>>>> 01e8587... New structure just one index file
+The aim of this project was to construct a SARIMA time series model based on the time series of industrial production of Austria obtained from http://datamarket.com web site. After exploratory data analysis appropriate transformations, five possible models have been estimated. The best model was selected by using AIC criterion and diagnostic checking. Once SARIMA (2,1,0) (0,1,1) model was constructed and fitted it was utilized for forecasting and simulation.
