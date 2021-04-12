@@ -402,7 +402,7 @@ p<-ggplot() +
   scale_color_manual(values=c("red", "darkblue"))+
   theme_gray()+
   labs(x="Time")+
-  labs(y="Observationsand Forecast")+
+  labs(y="Observations and Forecast")+
   ggtitle("Forecast")
 fig<-ggplotly(p)
 fig
